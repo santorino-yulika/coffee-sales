@@ -4,7 +4,7 @@ import plotly.express as px
 import os
 
 # --- КОНФІГУРАЦІЯ ---
-st.set_page_config(layout="wide", page_title="Sales Report Pro")
+st.set_page_config(layout="wide", page_title="Coffee Sales Analytics Pro")
 
 DEFAULT_FILE = "data_sales.csv"
 CHRONO_ORDER = ['9.25', '10.25', '11.25', '12.25', '1.26']
@@ -25,7 +25,6 @@ def load_data(file_source):
         
         for m in CHRONO_ORDER:
             if m in df.columns:
-                # Чистимо числа: прибираємо пробіли, міняємо коми на крапки
                 df[m] = pd.to_numeric(df[m].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0)
             else:
                 df[m] = 0.0
@@ -37,7 +36,7 @@ def load_data(file_source):
         st.error(f"Помилка даних: {e}")
         return None
 
-# --- СТАТУСИ З ЕМОДЗІ ---
+# --- СТАТУСИ ---
 def get_status_label(row):
     vals = [row[m] for m in CHRONO_ORDER]
     jan, dec, nov = vals[-1], vals[-2], vals[-3]
@@ -45,9 +44,9 @@ def get_status_label(row):
     if sum(vals[:3]) == 0 and sum(vals[3:]) > 0:
         return "✨ НОВИЙ"
     if jan == 0 and dec > 0:
-        return "ВІДСУТНІ в останному місяці"
+        return "🔴 ВІДСУТНІ (Січень 0)"
     if jan == 0 and dec == 0:
-        return "🔴 ПРИПИНЕНО"
+        return "💀 ПРИПИНЕНО"
     if jan > dec > nov and nov > 0:
         return "📈 РІСТ"
     if jan < dec < nov and jan > 0:
@@ -56,8 +55,8 @@ def get_status_label(row):
         return "🎲 НЕРЕГУЛЯРНО"
     return "✅ СТАБІЛЬНО"
 
-# --- ЛОГІКА ---
-uploaded_file = st.file_uploader("Завантажити новий файл", type="csv")
+# --- ОБРОБКА ---
+uploaded_file = st.file_uploader("Завантажити файл", type="csv")
 data_source = uploaded_file if uploaded_file else (DEFAULT_FILE if os.path.exists(DEFAULT_FILE) else None)
 
 if data_source:
@@ -65,8 +64,8 @@ if data_source:
     if df is not None:
         df['Аналітика'] = df.apply(get_status_label, axis=1)
         
-        # Вибираємо та впорядковуємо колонки
-        cols_to_show = ['Менеджер', 'Кліент', 'Аналітика', '1.26', '12.25', '11.25', '10.25', '9.25']
+        # Порядок колонок як у вхідному файлі: Менеджер, Клієнт, Статус, потім місяці 09->01
+        cols_to_show = ['Менеджер', 'Кліент', 'Аналітика'] + CHRONO_ORDER
         df_final = df[cols_to_show].copy()
 
         # Фільтри
@@ -76,37 +75,52 @@ if data_source:
         
         df_filtered = df_final[(df_final['Менеджер'].isin(sel_mgr)) & (df_final['Аналітика'].isin(sel_st))]
 
-        # --- ГРАФІКИ ---
-        st.subheader("📊 Динаміка")
-        def draw_chart(data, color_col, title):
-            m = data.melt(id_vars=[color_col], value_vars=CHRONO_ORDER, var_name='Місяць', value_name='Продажі')
-            m['Місяць'] = pd.Categorical(m['Місяць'], categories=CHRONO_ORDER, ordered=True)
-            fig = px.line(m.sort_values('Місяць'), x='Місяць', y='Продажі', color=color_col, markers=True, title=title)
-            fig.update_layout(xaxis_type='category')
-            return fig
-
+        # --- ДАШБОРДИ ---
+        st.subheader("📊 Візуалізація трендів")
+        
         c1, c2 = st.columns(2)
+        
         with c1:
-            st.plotly_chart(draw_chart(df_filtered.groupby('Менеджер')[CHRONO_ORDER].sum().reset_index(), 'Менеджер', "По менеджерам"), use_container_width=True)
-        with c2:
-            sel_cl = st.multiselect("Виберіть клієнтів для порівняння", sorted(df_filtered['Кліент'].unique()))
-            if sel_cl:
-                st.plotly_chart(draw_chart(df_filtered[df_filtered['Кліент'].isin(sel_cl)], 'Кліент', "По клієнтам"), use_container_width=True)
+            # Тренди менеджерів - залишаємо лінійний для чіткості
+            m_data = df_filtered.groupby('Менеджер')[CHRONO_ORDER].sum().reset_index()
+            m_melted = m_data.melt(id_vars=['Менеджер'], value_vars=CHRONO_ORDER, var_name='Місяць', value_name='Сума')
+            m_melted['Місяць'] = pd.Categorical(m_melted['Місяць'], categories=CHRONO_ORDER, ordered=True)
+            fig_mgr = px.line(m_melted.sort_values('Місяць'), x='Місяць', y='Сума', color='Менеджер', 
+                              markers=True, title="Динаміка по менеджерам", template="plotly_white")
+            st.plotly_chart(fig_mgr, use_container_width=True)
 
-        # --- ТАБЛИЦЯ (БЕЗ ФОНОВОЇ ЗАЛИВКИ) ---
+        with c2:
+            # Тренди клієнтів - робимо Area Chart (Графік з областями)
+            sel_cl = st.multiselect("Виберіть клієнтів для аналізу", sorted(df_filtered['Кліент'].unique()))
+            if sel_cl:
+                cl_data = df_filtered[df_filtered['Кліент'].isin(sel_cl)]
+                cl_melted = cl_data.melt(id_vars=['Кліент'], value_vars=CHRONO_ORDER, var_name='Місяць', value_name='Сума')
+                cl_melted['Місяць'] = pd.Categorical(cl_melted['Місяць'], categories=CHRONO_ORDER, ordered=True)
+                # Area chart виглядає значно краще для порівняння об'ємів
+                fig_cl = px.area(cl_melted.sort_values('Місяць'), x='Місяць', y='Сума', color='Кліент', 
+                                 title="Об'єми закупівлі вибраних клієнтів", template="plotly_white",
+                                 line_group='Кліент')
+                st.plotly_chart(fig_cl, use_container_width=True)
+            else:
+                st.info("💡 Оберіть декілька клієнтів вище, щоб побачити їх порівняльну динаміку")
+
+        # --- ТАБЛИЦЯ ---
         st.subheader("📋 Детальний звіт")
         
-        # Форматуємо таблицю: Січень виділяємо кольором тексту, а не фоном
         st.dataframe(
             df_filtered,
             column_config={
-                "1.26": st.column_config.NumberColumn("СІЧЕНЬ", format="%.2f", help="Продажі за останній місяць"),
-                "Аналітика": st.column_config.TextColumn("СТАТУС", width="medium"),
-                "Кліент": st.column_config.TextColumn("КЛІЄНТ", width="large"),
+                "Аналітика": st.column_config.TextColumn("📊 Статус", width="medium"),
+                "1.26": st.column_config.NumberColumn("Січень", format="%.0f ☕"),
+                "Кліент": st.column_config.TextColumn("Контрагент", width="large")
             },
             use_container_width=True,
-            height=600,
+            height=550,
             hide_index=True
         )
+
+        # Кнопка експорту
+        csv = df_filtered.to_csv(index=False).encode('utf-8-sig')
+        st.download_button("📥 Завантажити звіт у CSV", data=csv, file_name="coffee_report.csv")
 else:
-    st.info("Чекаю на файл...")
+    st.info("Потрібен файл data_sales.csv для відображення")
