@@ -4,12 +4,12 @@ import plotly.express as px
 import os
 
 # --- КОНФІГУРАЦІЯ ---
-st.set_page_config(layout="wide", page_title="Coffee Sales Analytics Pro")
+st.set_page_config(layout="wide", page_title="Coffee Sales Analytics")
 
 DEFAULT_FILE = "data_sales.csv"
 CHRONO_ORDER = ['9.25', '10.25', '11.25', '12.25', '1.26']
 
-st.title("☕ Аналітика продажів кави")
+st.title("☕ ОПТ: Аналітика продажів")
 
 # --- ЗАВАНТАЖЕННЯ ---
 @st.cache_data
