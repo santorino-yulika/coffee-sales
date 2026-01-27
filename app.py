@@ -45,9 +45,9 @@ def get_status_label(row):
     if sum(vals[:3]) == 0 and sum(vals[3:]) > 0:
         return "✨ НОВИЙ"
     if jan == 0 and dec > 0:
-        return "🔴 ВІДСУТНІ (Січень 0)"
+        return "ВІДСУТНІ в останному місяці"
     if jan == 0 and dec == 0:
-        return "💀 ПРИПИНЕНО"
+        return "🔴 ПРИПИНЕНО"
     if jan > dec > nov and nov > 0:
         return "📈 РІСТ"
     if jan < dec < nov and jan > 0:
